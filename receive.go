@@ -36,20 +36,25 @@ type Config struct {
 	Name_mapping map[string]string
 }
 
-func read_config(filename string) (Config, error) {
-	var config Config
+type Metric struct {
+	metric string
+	value  string
+}
 
+var config Config
+
+func read_config(filename string) error {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return config, err
+		return err
 	}
 
 	err = yaml.Unmarshal([]byte(data), &config)
 	if err != nil {
-		return config, err
+		return err
 	}
 
-	return config, nil
+	return nil
 }
 
 func reset_tty(port_str string, baud_rate int) error {
@@ -70,21 +75,21 @@ func reset_tty(port_str string, baud_rate int) error {
 }
 
 func read_from_tty(sif io.Reader, tty_input chan string) {
-	var reply string
+	var message string
 	var err error
 	reader := bufio.NewReader(sif)
 
 	for {
-		reply, err = reader.ReadString('\n')
+		message, err = reader.ReadString('\n')
 		if err != nil {
 			panic(err)
 		}
-		tty_input <- strings.TrimSpace(reply)
+		tty_input <- strings.TrimSpace(message)
 	}
 }
 
 func main() {
-	config, err := read_config(os.Args[1])
+	err := read_config(os.Args[1])
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -103,48 +108,63 @@ func main() {
 	}
 
 	// try to connect a graphite server
-	Graphite, err := graphite.NewGraphite(config.Collector.Configuration.Host, config.Collector.Configuration.Port)
-	Graphite.Prefix = config.Collector.Configuration.Prefix
+	graphite, err := graphite.NewGraphite(config.Collector.Configuration.Host, config.Collector.Configuration.Port)
+	graphite.Prefix = config.Collector.Configuration.Prefix
 
-	log.Printf("Value: %#v\n", config.Name_mapping["00000d0000000001"])
-	log.Printf("Loaded Graphite connection: %#v", Graphite)
-	Graphite.SimpleSend("stats.graphite_loaded", "1")
+	log.Printf("Loaded Graphite connection: %#v", graphite)
 
 	tty_input := make(chan string, 10)
+	graphite_output := make(chan Metric, 10)
 	go read_from_tty(sif, tty_input)
-	var reply string
+	go send_to_graphite(graphite, graphite_output)
+	parse_input(tty_input, graphite_output)
+}
+
+func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
+	var message Metric
 	for {
-		reply = <-tty_input
-		log.Println(reply)
-		parse_input(reply)
+		message = <-input
+		log.Printf("Sending: %v", message)
+		graphite.SimpleSend(message.metric, message.value)
 	}
 }
 
-func parse_input(input string) {
-	data := strings.Split(input, " ")
-	status := data[0]
-	timestamp := data[1]
-	id, _ := integer_strings_to_hexstring(data[2:10])
-	payload, _ := integer_strings_to_integers(data[10:])
+func id_to_name(id string) string {
+	return config.Name_mapping[id]
+}
 
-	log.Println("Status:", status)
-	log.Println("TS:", timestamp)
-	log.Println("ID:", id)
-	log.Println("Payload:", payload)
+func parse_input(input chan string, output chan Metric) {
+	var message string
+	for {
+		message = <-input
+		log.Println(message)
+		data := strings.Split(message, " ")
+		status := data[0]
+		timestamp := data[1]
+		id, _ := integer_strings_to_hexstring(data[2:10])
+		payload, _ := integer_strings_to_integers(data[10:])
+		name := id_to_name(id)
 
-	var p_type string
-	var p_value float64
-	if strings.HasPrefix(id, "0000") {
-		p_type, p_value = payload_node(payload)
-	} else if strings.HasPrefix(id, "28") {
-		p_type, p_value = payload_ds18b20(payload)
-	} else {
-		p_type = "unknown"
-		p_value = 0
+		log.Println("Status:", status)
+		log.Println("TS:", timestamp)
+		log.Println("ID:", id)
+		log.Println("Payload:", payload)
+
+		var p_type string
+		var p_value string
+		if strings.HasPrefix(id, "0000") {
+			p_type, p_value = payload_node(payload)
+		} else if strings.HasPrefix(id, "28") {
+			p_type, p_value = payload_ds18b20(payload)
+		} else {
+			p_type = "unknown"
+			p_value = "-"
+		}
+
+		log.Println("Payload type:", p_type)
+		log.Println("Payload value:", p_value)
+		output <- Metric{fmt.Sprintf("%v.%v.value", name, p_type), p_value}
 	}
-
-	log.Println("Payload type:", p_type)
-	log.Println("Payload value:", p_value)
 }
 
 func integer_strings_to_integers(integer_strings []string) ([]int, error) {
@@ -173,7 +193,7 @@ func integer_strings_to_hexstring(integer_strings []string) (string, error) {
 	return buffer.String(), nil
 }
 
-func payload_node(payload []int) (string, float64) {
+func payload_node(payload []int) (string, string) {
 	payload_type_int := payload[0]
 
 	var payload_type string
@@ -184,16 +204,16 @@ func payload_node(payload []int) (string, float64) {
 	}
 
 	payload_value := 0
-	index := 0
+	index := 1
 
 	for _, i := range payload[1:] {
 		payload_value = payload_value + (i * index)
 		index = index * 256
 	}
-	return payload_type, float64(payload_value)
+	return payload_type, fmt.Sprintf("%d", payload_value)
 }
 
-func payload_ds18b20(payload []int) (string, float64) {
+func payload_ds18b20(payload []int) (string, string) {
 	low := payload[0]
 	high := payload[1]
 
@@ -209,7 +229,7 @@ func payload_ds18b20(payload []int) (string, float64) {
 		s = -1
 		t = (t ^ 65535) + 1
 	}
-	temp := RoundN(float64(s*t)/16.0, 1)
+	temp := fmt.Sprintf("%f", RoundN(float64(s*t)/16.0, 1))
 
 	return "temperature", temp
 }
