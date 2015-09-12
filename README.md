@@ -1,49 +1,35 @@
-You can use this to send data to graphite (https://github.com/graphite-project)
+# About
 
-Steps needed:
+You can use this to send data from OneWire sensors to graphite (https://github.com/graphite-project)
 
-1. complete the config.yaml
-   
-   An example is included
+# Configuration
 
-   Basically you need to configure the receiver, the collector and map the names. The receiver receives
-   data from the serial (USB), the collector is the part that actually stores the data, and the mapping
-   converts the ids to 'human' names.
+An example configuration is included
 
-   1. receiver
+Basically you need to configure the receiver, the collector and map the names. The receiver receives
+data from the serial (USB), the collector is the part that actually stores the data, and the mapping
+converts the ids to 'human' names.
 
-      This is basically the configuration for the serial port. The given example is probably sufficient,
-      you might want to doublecheck the USB port number.
+1. receiver
 
-   2. collector
+	This is basically the configuration for the serial port. The given example is probably sufficient,
+	you might want to doublecheck the USB port number. Most parameters are useless at the moment.
 
-      For the time being, this is highly oriented to graphite. This is the configuration as is passed to
-      the initializer of the graphite API gem (https://github.com/kontera-technologies/graphite-api).
-      It's fairly straight forward.
+2. collector
 
-   3. mapping
+	For the time being, this is highly oriented to graphite.
 
-      Here you map any the unique hex id to a graphite (sub)path.
+3. mapping
 
-      The unit will send a heartbeat every cycle, which will have '0000XX0000000001' as id (XX is it's
-      unique id programmed via the firmware).
+	Here you map any the unique hex id to a graphite (sub)path.
 
-      Every OneWire sensor will be transmitted over via the OneWire unique id; eg. for DS18B20 temperature
-      sensors, the id starts with '28'.
+	The unit will send a heartbeat every cycle, which will have '0000XX0000000001' as id (XX is it's
+	unique id programmed via the firmware).
 
-      The data should be sent over as is to minimize power consumption on the sensors, and is processed
-      by the ruby script here.
+	Every OneWire sensor will be transmitted over via the OneWire unique id; eg. for DS18B20 temperature
+	sensors, the id starts with '28'.
 
-2. install the ruby dependencies - either or not using rvm
-   
-   ```bash
-   bundle install
-   ```
-
-3. try the script
-   
-   ```bash
-   ruby receive.rb
-   ```
+	The data should be sent over as is to minimize power consumption on the sensors, and is processed
+	by this daemon.
 
 At some point, more collector options will be added.

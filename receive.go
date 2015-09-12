@@ -142,8 +142,11 @@ func parse_input(input chan string, output chan Metric) {
 		message = <-input
 		log.Println(message)
 		data := strings.Split(message, " ")
-		// status := data[0]
-		// timestamp := data[1]
+		/****
+		Following information is calculated by tty but not used
+		status := data[0]
+		timestamp := data[1]
+		****/
 		id, _ := integer_strings_to_hexstring(data[2:10])
 		payload, _ := integer_strings_to_integers(data[10:])
 		name := id_to_name(id)
