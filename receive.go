@@ -17,7 +17,7 @@ import (
 	"strings"
 )
 
-type Config struct {
+type config struct {
 	Receiver struct {
 		Port_str  string
 		Baud_rate int
@@ -41,15 +41,15 @@ type Metric struct {
 	value  string
 }
 
-var config Config
+var cfg config
 
-func read_config(filename string) error {
+func read_configuration(filename string) error {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return err
 	}
 
-	err = yaml.Unmarshal([]byte(data), &config)
+	err = yaml.Unmarshal([]byte(data), &cfg)
 	if err != nil {
 		return err
 	}
@@ -67,13 +67,12 @@ func reset_tty(port_str string, baud_rate int) error {
 	_, err = exec.Command(binary, args...).Output()
 
 	if err != nil {
-		log.Printf("An error has occurred while resetting tty: %s", err)
 		return err
 	}
 	return nil
 }
 
-func read_from_tty(sif io.Reader, tty_input chan string) {
+func read_from_tty(sif io.Reader, tty_input chan string) error {
 	var message string
 	var err error
 	reader := bufio.NewReader(sif)
@@ -81,38 +80,39 @@ func read_from_tty(sif io.Reader, tty_input chan string) {
 	for {
 		message, err = reader.ReadString('\n')
 		if err != nil {
-			panic(err)
+			return err
 		}
 		tty_input <- strings.TrimSpace(message)
 	}
+	return nil
 }
 
 func main() {
-	err := read_config(os.Args[1])
+	err := read_configuration(os.Args[1])
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("An error has occurred while read configuration file:", err)
 	}
 
-	port_str := config.Receiver.Port_str
-	baud_rate := config.Receiver.Baud_rate
+	port_str := cfg.Receiver.Port_str
+	baud_rate := cfg.Receiver.Baud_rate
 
 	err = reset_tty(port_str, baud_rate)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("An error has occurred while resetting tty:", err)
 	}
 
 	sif, err := serial.OpenPort(&serial.Config{Name: port_str, Baud: baud_rate})
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("An error has occurred while trying to open the tty:", err)
 	}
 
 	// try to connect a graphite server
-	graphite, err := graphite.NewGraphite(config.Collector.Configuration.Host, config.Collector.Configuration.Port)
+	graphite, err := graphite.NewGraphite(cfg.Collector.Configuration.Host, cfg.Collector.Configuration.Port)
 	if err != nil {
-		log.Fatal(err)
+		log.Fatal("An error has occurred while trying to create a Graphite connector:", err)
 	}
 
-	graphite.Prefix = config.Collector.Configuration.Prefix
+	graphite.Prefix = cfg.Collector.Configuration.Prefix
 
 	log.Printf("Loaded Graphite connection: %#v", graphite)
 
@@ -133,7 +133,7 @@ func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
 }
 
 func id_to_name(id string) string {
-	return config.Name_mapping[id]
+	return cfg.Name_mapping[id]
 }
 
 func parse_input(input chan string, output chan Metric) {
