@@ -9,7 +9,6 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
-	"syscall"
 )
 
 type Config struct {
@@ -32,7 +31,7 @@ type Config struct {
 }
 
 func main() {
-	config := read_config(os.Args[1])
+	config, err := read_config(os.Args[1])
 
 	port_str := config.Receiver.Port_str
 	baud_rate := config.Receiver.Baud_rate
@@ -65,25 +64,28 @@ func main() {
 	log.Printf("%q", buf[:n])
 }
 
-func read_config(filename string) Config {
-	var config Config
+func read_config(filename string) (config Config, err error) {
 	data, _ := ioutil.ReadFile(filename)
-	err := yaml.Unmarshal([]byte(data), &config)
 	if err != nil {
-		panic(err)
+		return
 	}
-	return config
+	err = yaml.Unmarshal([]byte(data), &config)
+	return
 }
 
-func reset_tty(port_str string, baud_rate int) {
-	binary, lookErr := exec.LookPath("stty")
-	if lookErr != nil {
-		panic(lookErr)
+func reset_tty(port_str string, baud_rate int) (err error) {
+	binary, err := exec.LookPath("stty")
+	if err != nil {
+		return
 	}
-	args := []string{"stty", "-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
-	env := os.Environ()
-	execErr := syscall.Exec(binary, args, env)
-	if execErr != nil {
-		panic(execErr)
+	args := []string{"-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
+
+	_, err = exec.Command(binary, args...).Output()
+
+	if err != nil {
+		log.Println("error occured")
+		log.Printf("%s", err)
+		return
 	}
+	return
 }
