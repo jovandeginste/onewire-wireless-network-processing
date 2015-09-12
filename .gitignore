@@ -2,3 +2,4 @@ config.yaml
 .ruby-version
 .ruby-gemset
 Gemfile.lock
+receive
