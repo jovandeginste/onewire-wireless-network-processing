@@ -2,11 +2,14 @@ package main
 
 import (
 	"github.com/marpaia/graphite-golang"
-	"io/ioutil"
-	"os"
-	//"github.com/tarm/serial"
+	"github.com/tarm/serial"
 	"gopkg.in/yaml.v2"
+	"io/ioutil"
 	"log"
+	"os"
+	"os/exec"
+	"strconv"
+	"syscall"
 )
 
 type Config struct {
@@ -29,13 +32,16 @@ type Config struct {
 }
 
 func main() {
-	filename := os.Args[1]
-	var config Config
+	config := read_config(os.Args[1])
 
-	data, _ := ioutil.ReadFile(filename)
-	err := yaml.Unmarshal([]byte(data), &config)
+	port_str := config.Receiver.Port_str
+	baud_rate := config.Receiver.Baud_rate
+
+	reset_tty(port_str, baud_rate)
+
+	sif, err := serial.OpenPort(&serial.Config{Name: port_str, Baud: baud_rate})
 	if err != nil {
-		panic(err)
+		log.Fatal(err)
 	}
 
 	// try to connect a graphite server
@@ -50,4 +56,34 @@ func main() {
 
 	log.Printf("Loaded Graphite connection: %#v", Graphite)
 	Graphite.SimpleSend("stats.graphite_loaded", "1")
+
+	buf := make([]byte, 128)
+	n, err := sif.Read(buf)
+	if err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("%q", buf[:n])
+}
+
+func read_config(filename string) Config {
+	var config Config
+	data, _ := ioutil.ReadFile(filename)
+	err := yaml.Unmarshal([]byte(data), &config)
+	if err != nil {
+		panic(err)
+	}
+	return config
+}
+
+func reset_tty(port_str string, baud_rate int) {
+	binary, lookErr := exec.LookPath("stty")
+	if lookErr != nil {
+		panic(lookErr)
+	}
+	args := []string{"stty", "-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
+	env := os.Environ()
+	execErr := syscall.Exec(binary, args, env)
+	if execErr != nil {
+		panic(execErr)
+	}
 }

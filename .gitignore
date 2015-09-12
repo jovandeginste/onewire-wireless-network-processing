@@ -3,3 +3,4 @@ config.yaml
 .ruby-gemset
 Gemfile.lock
 receive
+Makefile
