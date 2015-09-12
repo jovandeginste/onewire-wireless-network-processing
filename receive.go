@@ -31,19 +31,26 @@ type Config struct {
 	Name_mapping map[string]string
 }
 
-func read_config(filename string) (config Config, err error) {
-	data, _ := ioutil.ReadFile(filename)
+func read_config(filename string) (Config, error) {
+	var config Config
+
+	data, err := ioutil.ReadFile(filename)
 	if err != nil {
-		return
+		return config, err
 	}
+
 	err = yaml.Unmarshal([]byte(data), &config)
-	return
+	if err != nil {
+		return config, err
+	}
+
+	return config, err
 }
 
-func reset_tty(port_str string, baud_rate int) (err error) {
+func reset_tty(port_str string, baud_rate int) error {
 	binary, err := exec.LookPath("stty")
 	if err != nil {
-		return
+		return err
 	}
 	args := []string{"-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
 
@@ -52,9 +59,9 @@ func reset_tty(port_str string, baud_rate int) (err error) {
 	if err != nil {
 		log.Println("error occured")
 		log.Printf("%s", err)
-		return
+		return err
 	}
-	return
+	return err
 }
 
 func main() {
@@ -75,7 +82,6 @@ func main() {
 	Graphite.Prefix = config.Collector.Configuration.Prefix
 
 	log.Printf("Value: %#v\n", config.Name_mapping["00000d0000000001"])
-
 	log.Printf("Loaded Graphite connection: %#v", Graphite)
 	Graphite.SimpleSend("stats.graphite_loaded", "1")
 
