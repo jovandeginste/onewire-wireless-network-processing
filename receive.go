@@ -91,6 +91,7 @@ func main() {
 	err := read_configuration(os.Args[1])
 	if err != nil {
 		log.Fatal("An error has occurred while read configuration file:", err)
+		os.Exit(1)
 	}
 
 	port_str := cfg.Receiver.Port_str
@@ -99,17 +100,20 @@ func main() {
 	err = reset_tty(port_str, baud_rate)
 	if err != nil {
 		log.Fatal("An error has occurred while resetting tty:", err)
+		os.Exit(1)
 	}
 
 	sif, err := serial.OpenPort(&serial.Config{Name: port_str, Baud: baud_rate})
 	if err != nil {
 		log.Fatal("An error has occurred while trying to open the tty:", err)
+		os.Exit(1)
 	}
 
 	// try to connect a graphite server
 	graphite, err := graphite.NewGraphite(cfg.Collector.Configuration.Host, cfg.Collector.Configuration.Port)
 	if err != nil {
 		log.Fatal("An error has occurred while trying to create a Graphite connector:", err)
+		os.Exit(1)
 	}
 
 	graphite.Prefix = cfg.Collector.Configuration.Prefix
