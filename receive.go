@@ -132,7 +132,9 @@ func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
 	for {
 		message = <-input
 		log.Printf("Sending: %v", message)
+		graphite.Connect()
 		graphite.SimpleSend(message.metric, message.value)
+		graphite.Disconnect()
 	}
 }
 
