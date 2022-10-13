@@ -4,9 +4,6 @@ import (
 	"bufio"
 	"bytes"
 	"fmt"
-	"github.com/marpaia/graphite-golang"
-	"github.com/tarm/serial"
-	"gopkg.in/yaml.v2"
 	"io"
 	"io/ioutil"
 	"log"
@@ -15,6 +12,10 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/marpaia/graphite-golang"
+	"github.com/tarm/serial"
+	"gopkg.in/yaml.v2"
 )
 
 type config struct {
@@ -62,6 +63,7 @@ func reset_tty(port_str string, baud_rate int) error {
 	if err != nil {
 		return err
 	}
+
 	args := []string{"-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
 
 	_, err = exec.Command(binary, args...).Output()
@@ -69,6 +71,7 @@ func reset_tty(port_str string, baud_rate int) error {
 	if err != nil {
 		return err
 	}
+
 	return nil
 }
 
@@ -82,14 +85,13 @@ func read_from_tty(sif io.Reader, tty_input chan string) error {
 		if err != nil {
 			return err
 		}
+
 		tty_input <- strings.TrimSpace(message)
 	}
-	return nil
 }
 
 func main() {
-	err := read_configuration(os.Args[1])
-	if err != nil {
+	if err := read_configuration(os.Args[1]); err != nil {
 		log.Fatal("An error has occurred while read configuration file:", err)
 		os.Exit(1)
 	}
@@ -97,8 +99,7 @@ func main() {
 	port_str := cfg.Receiver.Port_str
 	baud_rate := cfg.Receiver.Baud_rate
 
-	err = reset_tty(port_str, baud_rate)
-	if err != nil {
+	if err := reset_tty(port_str, baud_rate); err != nil {
 		log.Fatal("An error has occurred while resetting tty:", err)
 		os.Exit(1)
 	}
@@ -122,19 +123,31 @@ func main() {
 
 	tty_input := make(chan string, 10)
 	graphite_output := make(chan Metric, 10)
+
 	go read_from_tty(sif, tty_input)
 	go send_to_graphite(graphite, graphite_output)
+
 	parse_input(tty_input, graphite_output)
 }
 
 func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
 	var message Metric
+
 	for {
 		message = <-input
+
 		log.Printf("Sending: %v", message)
-		graphite.Connect()
+
+		if err := graphite.Connect(); err != nil {
+			log.Println(err)
+			continue
+		}
+
 		graphite.SimpleSend(message.metric, message.value)
-		graphite.Disconnect()
+
+		if err := graphite.Disconnect(); err != nil {
+			log.Println(err)
+		}
 	}
 }
 
@@ -143,10 +156,11 @@ func id_to_name(id string) string {
 }
 
 func parse_input(input chan string, output chan Metric) {
-	var message string
 	for {
-		message = <-input
+		message := <-input
+
 		log.Println(message)
+
 		data := strings.Split(message, " ")
 		/****
 		Following information is calculated by tty but not used
@@ -157,31 +171,36 @@ func parse_input(input chan string, output chan Metric) {
 		payload, _ := integer_strings_to_integers(data[10:])
 		name := id_to_name(id)
 
-		var p_type string
-		var p_value string
+		var (
+			pType  string
+			pValue string
+		)
+
 		if strings.HasPrefix(id, "0000") {
-			p_type, p_value = payload_node(payload)
+			pType, pValue = payload_node(payload)
 		} else if strings.HasPrefix(id, "28") {
-			p_type, p_value = payload_ds18b20(payload)
+			pType, pValue = payload_ds18b20(payload)
 		} else {
-			p_type = "unknown"
-			p_value = "-"
+			pType = "unknown"
+			pValue = "-"
 		}
 
-		output <- Metric{strings.Join([]string{name, p_type, "value"}, "."), p_value}
+		output <- Metric{strings.Join([]string{name, pType, "value"}, "."), pValue}
 	}
 }
 
 func integer_strings_to_integers(integer_strings []string) ([]int, error) {
-	var ints = []int{}
+	ints := []int{}
 
 	for _, i := range integer_strings {
 		j, err := strconv.Atoi(i)
 		if err != nil {
 			return ints, err
 		}
+
 		ints = append(ints, j)
 	}
+
 	return ints, nil
 }
 
@@ -193,15 +212,17 @@ func integer_strings_to_hexstring(integer_strings []string) (string, error) {
 		if err != nil {
 			return buffer.String(), err
 		}
+
 		buffer.WriteString(fmt.Sprintf("%02x", j))
 	}
+
 	return buffer.String(), nil
 }
 
 func payload_node(payload []int) (string, string) {
 	payload_type_int := payload[0]
-
 	payload_type := "unknown"
+
 	if payload_type_int == 1 {
 		payload_type = "heartbeat"
 	}
@@ -211,6 +232,7 @@ func payload_node(payload []int) (string, string) {
 	for i := len(payload) - 1; i >= 1; i-- {
 		payload_value = payload_value<<8 + payload[i]
 	}
+
 	return payload_type, fmt.Sprintf("%d", payload_value)
 }
 
@@ -230,6 +252,7 @@ func payload_ds18b20(payload []int) (string, string) {
 		s = -1
 		t = (t ^ 65535) + 1
 	}
+
 	temp := fmt.Sprintf("%f", RoundN(float64(s*t)/16.0, 1))
 
 	return "temperature", temp

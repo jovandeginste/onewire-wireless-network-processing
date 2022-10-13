@@ -13,7 +13,6 @@ deps:
 build-all: $(foreach arch,$(ALL_ARCHS),build-$(arch))
 
 build:
-	@go env
 	go build -o "bin/$(BINARY).$(SUFFIX)" "$(SOURCE)"
 	file "bin/$(BINARY).$(SUFFIX)"
 
