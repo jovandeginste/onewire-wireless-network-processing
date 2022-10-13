@@ -1,9 +1,23 @@
+# github.com/eclipse/paho.mqtt.golang v1.4.1
+## explicit; go 1.14
+github.com/eclipse/paho.mqtt.golang
+github.com/eclipse/paho.mqtt.golang/packets
+# github.com/gorilla/websocket v1.4.2
+## explicit; go 1.12
+github.com/gorilla/websocket
 # github.com/marpaia/graphite-golang v0.0.0-20190519024811-caf161d2c2b1
 ## explicit
 github.com/marpaia/graphite-golang
 # github.com/tarm/serial v0.0.0-20180830185346-98f6abe2eb07
 ## explicit
 github.com/tarm/serial
+# golang.org/x/net v0.0.0-20200425230154-ff2c4b7c35a0
+## explicit; go 1.11
+golang.org/x/net/internal/socks
+golang.org/x/net/proxy
+# golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
+## explicit
+golang.org/x/sync/semaphore
 # golang.org/x/sys v0.0.0-20221013171732-95e765b1cc43
 ## explicit; go 1.17
 golang.org/x/sys/unix

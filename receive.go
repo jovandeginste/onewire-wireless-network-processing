@@ -3,6 +3,7 @@ package main
 import (
 	"bufio"
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"io/ioutil"
@@ -12,34 +13,48 @@ import (
 	"os/exec"
 	"strconv"
 	"strings"
+	"time"
 
+	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/marpaia/graphite-golang"
 	"github.com/tarm/serial"
 	"gopkg.in/yaml.v2"
 )
 
+var f mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
+	log.Printf("TOPIC: %s\n", msg.Topic())
+	log.Printf("MSG: %s\n", msg.Payload())
+}
+
 type config struct {
 	Receiver struct {
-		Port_str  string
-		Baud_rate int
-		Data_bits int
-		Stop_bits int
-		Parity    int
-	}
+		PortStr  string `yaml:"port_str"`
+		BaudRate int    `yaml:"baud_rate"`
+		DataBits int    `yaml:"data_bits"`
+		StopBits int    `yaml:"stop_bits"`
+		Parity   int    `yaml:"parity"`
+	} `yaml:"receiver"`
 	Collector struct {
-		Type          string
+		Type          string `yaml:"type"`
 		Configuration struct {
-			Host   string
-			Port   int
-			Prefix string
+			Host   string `yaml:"host"`
+			Port   int    `yaml:"port"`
+			Prefix string `yaml:"prefix"`
 		}
 	}
-	Name_mapping map[string]string
+	MQTT struct {
+		Host        string `yaml:"host"`
+		Username    string `yaml:"username"`
+		Password    string `yaml:"password"`
+		TopicPrefix string `yaml:"topic_prefix"`
+	}
+	NameMapping map[string]string `yaml:"name_mapping"`
 }
 
 type Metric struct {
-	metric string
-	value  string
+	Name  string `json:"name"`
+	Type  string `json:"type"`
+	Value string `json:"value"`
 }
 
 var cfg config
@@ -96,15 +111,29 @@ func main() {
 		os.Exit(1)
 	}
 
-	port_str := cfg.Receiver.Port_str
-	baud_rate := cfg.Receiver.Baud_rate
+	mqtt.DEBUG = log.New(os.Stdout, "", 0)
+	mqtt.ERROR = log.New(os.Stdout, "", 0)
 
-	if err := reset_tty(port_str, baud_rate); err != nil {
+	opts := mqtt.NewClientOptions().AddBroker(cfg.MQTT.Host).SetClientID("onewire_logger")
+
+	opts.SetKeepAlive(60 * time.Second)
+	// Set the message callback handler
+	opts.SetDefaultPublishHandler(f)
+	opts.SetPingTimeout(1 * time.Second)
+	opts.Username = cfg.MQTT.Username
+	opts.Password = cfg.MQTT.Password
+
+	mqttClient := mqtt.NewClient(opts)
+
+	portStr := cfg.Receiver.PortStr
+	baudRate := cfg.Receiver.BaudRate
+
+	if err := reset_tty(portStr, baudRate); err != nil {
 		log.Fatal("An error has occurred while resetting tty:", err)
 		os.Exit(1)
 	}
 
-	sif, err := serial.OpenPort(&serial.Config{Name: port_str, Baud: baud_rate})
+	sif, err := serial.OpenPort(&serial.Config{Name: portStr, Baud: baudRate})
 	if err != nil {
 		log.Fatal("An error has occurred while trying to open the tty:", err)
 		os.Exit(1)
@@ -121,29 +150,61 @@ func main() {
 
 	log.Printf("Loaded Graphite connection: %#v", graphite)
 
-	tty_input := make(chan string, 10)
-	graphite_output := make(chan Metric, 10)
+	ttyInput := make(chan string, 10)
+	graphiteOutput := make(chan *Metric, 10)
+	mqttOutput := make(chan *Metric, 10)
 
-	go read_from_tty(sif, tty_input)
-	go send_to_graphite(graphite, graphite_output)
+	go read_from_tty(sif, ttyInput)
+	go send_to_graphite(graphite, graphiteOutput)
+	go send_to_mqtt(mqttClient, mqttOutput)
 
-	parse_input(tty_input, graphite_output)
+	parse_input(ttyInput, graphiteOutput, mqttOutput)
 }
 
-func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
-	var message Metric
+func send_to_mqtt(client mqtt.Client, input chan *Metric) {
+	if token := client.Connect(); token.Wait() && token.Error() != nil {
+		panic(token.Error())
+	}
 
 	for {
-		message = <-input
+		message := <-input
 
-		log.Printf("Sending: %v", message)
+		log.Printf("MQTT Sending to '%s': %#v", message.MQTTTopic(), message)
+
+		token := client.Publish(message.MQTTTopic(), 0, false, message.MQTTValue())
+		token.Wait()
+
+		if token.Error() != nil {
+			log.Println(token.Error())
+		}
+	}
+}
+
+func (m *Metric) MQTTTopic() string {
+	return cfg.MQTT.TopicPrefix + "/" + m.Name
+}
+
+func (m *Metric) MQTTValue() string {
+	u, err := json.Marshal(m)
+	if err != nil {
+		return ""
+	}
+
+	return string(u)
+}
+
+func send_to_graphite(graphite *graphite.Graphite, input chan *Metric) {
+	for {
+		message := <-input
+
+		log.Printf("Graphite Sending to '%s': %#v", message.GraphiteName(), message)
 
 		if err := graphite.Connect(); err != nil {
 			log.Println(err)
 			continue
 		}
 
-		graphite.SimpleSend(message.metric, message.value)
+		graphite.SimpleSend(message.GraphiteName(), message.Value)
 
 		if err := graphite.Disconnect(); err != nil {
 			log.Println(err)
@@ -152,10 +213,10 @@ func send_to_graphite(graphite *graphite.Graphite, input chan Metric) {
 }
 
 func id_to_name(id string) string {
-	return cfg.Name_mapping[id]
+	return cfg.NameMapping[id]
 }
 
-func parse_input(input chan string, output chan Metric) {
+func parse_input(input chan string, outputs ...chan *Metric) {
 	for {
 		message := <-input
 
@@ -185,8 +246,16 @@ func parse_input(input chan string, output chan Metric) {
 			pValue = "-"
 		}
 
-		output <- Metric{strings.Join([]string{name, pType, "value"}, "."), pValue}
+		m := Metric{Name: name, Type: pType, Value: pValue}
+
+		for _, o := range outputs {
+			o <- &m
+		}
 	}
+}
+
+func (m *Metric) GraphiteName() string {
+	return strings.Join([]string{m.Name, m.Type, "value"}, ".")
 }
 
 func integer_strings_to_integers(integer_strings []string) ([]int, error) {
