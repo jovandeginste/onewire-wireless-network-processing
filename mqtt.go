@@ -26,7 +26,7 @@ func newMQTTClient() mqtt.Client {
 	return mqtt.NewClient(opts)
 }
 
-func send_to_mqtt(client mqtt.Client, input chan *Metric) {
+func sendMQTT(client mqtt.Client, input chan *Metric) {
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
 		panic(token.Error())
 	}

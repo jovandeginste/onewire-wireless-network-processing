@@ -24,7 +24,7 @@ func newGraphiteClient() *graphite.Graphite {
 	return graphiteClient
 }
 
-func send_to_graphite(graphite *graphite.Graphite, input chan *Metric) {
+func sendGraphite(graphite *graphite.Graphite, input chan *Metric) {
 	for {
 		message := <-input
 

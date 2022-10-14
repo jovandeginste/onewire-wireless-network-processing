@@ -24,7 +24,7 @@ func newTTYReceiver() *serial.Port {
 	portStr := cfg.Receiver.PortStr
 	baudRate := cfg.Receiver.BaudRate
 
-	if err := reset_tty(portStr, baudRate); err != nil {
+	if err := resetTTY(portStr, baudRate); err != nil {
 		log.Fatal("An error has occurred while resetting tty:", err)
 		os.Exit(1)
 	}
@@ -38,24 +38,22 @@ func newTTYReceiver() *serial.Port {
 	return sif
 }
 
-func reset_tty(port_str string, baud_rate int) error {
+func resetTTY(portStr string, baudRate int) error {
 	binary, err := exec.LookPath("stty")
 	if err != nil {
 		return err
 	}
 
-	args := []string{"-F", port_str, strconv.Itoa(baud_rate), "-hup", "raw", "-echo"}
+	args := []string{"-F", portStr, strconv.Itoa(baudRate), "-hup", "raw", "-echo"}
 
-	_, err = exec.Command(binary, args...).Output()
-
-	if err != nil {
+	if _, err = exec.Command(binary, args...).Output(); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func read_from_tty(sif io.Reader, tty_input chan string) error {
+func readFromTTY(sif io.Reader, ttyInput chan string) error {
 	var message string
 	var err error
 	reader := bufio.NewReader(sif)
@@ -66,11 +64,11 @@ func read_from_tty(sif io.Reader, tty_input chan string) error {
 			return err
 		}
 
-		tty_input <- strings.TrimSpace(message)
+		ttyInput <- strings.TrimSpace(message)
 	}
 }
 
-func parse_input(input chan string, outputs ...chan *Metric) {
+func parseInput(input chan string, outputs ...chan *Metric) {
 	for {
 		message := <-input
 
@@ -82,9 +80,9 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 		status := data[0]
 		timestamp := data[1]
 		****/
-		id, _ := integer_strings_to_hexstring(data[2:10])
-		payload, _ := integer_strings_to_integers(data[10:])
-		name := id_to_name(id)
+		id, _ := stringsToIntegerHexes(data[2:10])
+		payload, _ := stringsToIntegers(data[10:])
+		name := idToName(id)
 
 		var (
 			pType  string
@@ -92,9 +90,9 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 		)
 
 		if strings.HasPrefix(id, "0000") {
-			pType, pValue = payload_node(payload)
+			pType, pValue = payloadNode(payload)
 		} else if strings.HasPrefix(id, "28") {
-			pType, pValue = payload_ds18b20(payload)
+			pType, pValue = payloadDS18B20(payload)
 		} else {
 			pType = "unknown"
 			pValue = 0
@@ -108,10 +106,10 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 	}
 }
 
-func integer_strings_to_integers(integer_strings []string) ([]int, error) {
+func stringsToIntegers(integerStrings []string) ([]int, error) {
 	ints := []int{}
 
-	for _, i := range integer_strings {
+	for _, i := range integerStrings {
 		j, err := strconv.Atoi(i)
 		if err != nil {
 			return ints, err
@@ -123,10 +121,10 @@ func integer_strings_to_integers(integer_strings []string) ([]int, error) {
 	return ints, nil
 }
 
-func integer_strings_to_hexstring(integer_strings []string) (string, error) {
+func stringsToIntegerHexes(integerStrings []string) (string, error) {
 	var buffer bytes.Buffer
 
-	for _, i := range integer_strings {
+	for _, i := range integerStrings {
 		j, err := strconv.Atoi(i)
 		if err != nil {
 			return buffer.String(), err
@@ -138,24 +136,24 @@ func integer_strings_to_hexstring(integer_strings []string) (string, error) {
 	return buffer.String(), nil
 }
 
-func payload_node(payload []int) (string, float64) {
-	payload_type_int := payload[0]
-	payload_type := "unknown"
+func payloadNode(payload []int) (string, float64) {
+	payloadTypeInt := payload[0]
+	payloadType := "unknown"
 
-	if payload_type_int == 1 {
-		payload_type = "heartbeat"
+	if payloadTypeInt == 1 {
+		payloadType = "heartbeat"
 	}
 
-	payload_value := 0
+	payloadValue := 0
 
 	for i := len(payload) - 1; i >= 1; i-- {
-		payload_value = payload_value<<8 + payload[i]
+		payloadValue = payloadValue<<8 + payload[i]
 	}
 
-	return payload_type, float64(payload_value)
+	return payloadType, float64(payloadValue)
 }
 
-func payload_ds18b20(payload []int) (string, float64) {
+func payloadDS18B20(payload []int) (string, float64) {
 	low := payload[0]
 	high := payload[1]
 

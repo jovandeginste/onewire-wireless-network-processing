@@ -31,7 +31,7 @@ type config struct {
 	NameMapping map[string]string `yaml:"name_mapping"`
 }
 
-func read_configuration(filename string) error {
+func readConfiguration(filename string) error {
 	data, err := ioutil.ReadFile(filename)
 	if err != nil {
 		return err
@@ -45,6 +45,6 @@ func read_configuration(filename string) error {
 	return nil
 }
 
-func id_to_name(id string) string {
+func idToName(id string) string {
 	return cfg.NameMapping[id]
 }

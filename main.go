@@ -8,7 +8,7 @@ import (
 var cfg config
 
 func main() {
-	if err := read_configuration(os.Args[1]); err != nil {
+	if err := readConfiguration(os.Args[1]); err != nil {
 		log.Fatal("An error has occurred while read configuration file:", err)
 		os.Exit(1)
 	}
@@ -21,9 +21,9 @@ func main() {
 	graphiteOutput := make(chan *Metric, 10)
 	mqttOutput := make(chan *Metric, 10)
 
-	go read_from_tty(sif, ttyInput)
-	go send_to_graphite(graphiteClient, graphiteOutput)
-	go send_to_mqtt(mqttClient, mqttOutput)
+	go readFromTTY(sif, ttyInput)
+	go sendGraphite(graphiteClient, graphiteOutput)
+	go sendMQTT(mqttClient, mqttOutput)
 
-	parse_input(ttyInput, graphiteOutput, mqttOutput)
+	parseInput(ttyInput, graphiteOutput, mqttOutput)
 }
