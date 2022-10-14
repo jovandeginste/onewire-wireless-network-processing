@@ -1,11 +1,15 @@
 package main
 
 import (
-	"log"
 	"os"
+
+	"github.com/sirupsen/logrus"
 )
 
-var cfg config
+var (
+	cfg config
+	log = logrus.StandardLogger()
+)
 
 func main() {
 	if err := readConfiguration(os.Args[1]); err != nil {

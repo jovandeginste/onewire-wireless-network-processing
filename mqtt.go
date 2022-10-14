@@ -2,8 +2,6 @@ package main
 
 import (
 	"encoding/json"
-	"log"
-	"os"
 	"path"
 	"time"
 
@@ -11,7 +9,7 @@ import (
 )
 
 func newMQTTClient() mqtt.Client {
-	mqtt.ERROR = log.New(os.Stdout, "", 0)
+	mqtt.ERROR = log
 
 	opts := mqtt.NewClientOptions().AddBroker(cfg.MQTT.Host).SetClientID("onewire_logger")
 
