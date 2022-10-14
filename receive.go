@@ -72,7 +72,7 @@ func parseInput(input chan string, outputs ...chan *Metric) {
 	for {
 		message := <-input
 
-		log.Println(message)
+		log.Printf("Received: %s", message)
 
 		data := strings.Split(message, " ")
 		/****
