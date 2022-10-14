@@ -3,74 +3,18 @@ package main
 import (
 	"bufio"
 	"bytes"
-	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
-	"math"
-	"os"
 	"os/exec"
 	"strconv"
 	"strings"
-	"time"
-
-	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/marpaia/graphite-golang"
-	"github.com/tarm/serial"
-	"gopkg.in/yaml.v2"
 )
 
-var f mqtt.MessageHandler = func(client mqtt.Client, msg mqtt.Message) {
-	log.Printf("TOPIC: %s\n", msg.Topic())
-	log.Printf("MSG: %s\n", msg.Payload())
-}
-
-type config struct {
-	Receiver struct {
-		PortStr  string `yaml:"port_str"`
-		BaudRate int    `yaml:"baud_rate"`
-		DataBits int    `yaml:"data_bits"`
-		StopBits int    `yaml:"stop_bits"`
-		Parity   int    `yaml:"parity"`
-	} `yaml:"receiver"`
-	Collector struct {
-		Type          string `yaml:"type"`
-		Configuration struct {
-			Host   string `yaml:"host"`
-			Port   int    `yaml:"port"`
-			Prefix string `yaml:"prefix"`
-		}
-	}
-	MQTT struct {
-		Host        string `yaml:"host"`
-		Username    string `yaml:"username"`
-		Password    string `yaml:"password"`
-		TopicPrefix string `yaml:"topic_prefix"`
-	}
-	NameMapping map[string]string `yaml:"name_mapping"`
-}
-
 type Metric struct {
-	Name  string `json:"name"`
-	Type  string `json:"type"`
-	Value string `json:"value"`
-}
-
-var cfg config
-
-func read_configuration(filename string) error {
-	data, err := ioutil.ReadFile(filename)
-	if err != nil {
-		return err
-	}
-
-	err = yaml.Unmarshal([]byte(data), &cfg)
-	if err != nil {
-		return err
-	}
-
-	return nil
+	Name  string  `json:"name"`
+	Type  string  `json:"type"`
+	Value float64 `json:"value"`
 }
 
 func reset_tty(port_str string, baud_rate int) error {
@@ -105,117 +49,6 @@ func read_from_tty(sif io.Reader, tty_input chan string) error {
 	}
 }
 
-func main() {
-	if err := read_configuration(os.Args[1]); err != nil {
-		log.Fatal("An error has occurred while read configuration file:", err)
-		os.Exit(1)
-	}
-
-	mqtt.DEBUG = log.New(os.Stdout, "", 0)
-	mqtt.ERROR = log.New(os.Stdout, "", 0)
-
-	opts := mqtt.NewClientOptions().AddBroker(cfg.MQTT.Host).SetClientID("onewire_logger")
-
-	opts.SetKeepAlive(60 * time.Second)
-	// Set the message callback handler
-	opts.SetDefaultPublishHandler(f)
-	opts.SetPingTimeout(1 * time.Second)
-	opts.Username = cfg.MQTT.Username
-	opts.Password = cfg.MQTT.Password
-
-	mqttClient := mqtt.NewClient(opts)
-
-	portStr := cfg.Receiver.PortStr
-	baudRate := cfg.Receiver.BaudRate
-
-	if err := reset_tty(portStr, baudRate); err != nil {
-		log.Fatal("An error has occurred while resetting tty:", err)
-		os.Exit(1)
-	}
-
-	sif, err := serial.OpenPort(&serial.Config{Name: portStr, Baud: baudRate})
-	if err != nil {
-		log.Fatal("An error has occurred while trying to open the tty:", err)
-		os.Exit(1)
-	}
-
-	// try to connect a graphite server
-	graphite, err := graphite.NewGraphite(cfg.Collector.Configuration.Host, cfg.Collector.Configuration.Port)
-	if err != nil {
-		log.Fatal("An error has occurred while trying to create a Graphite connector:", err)
-		os.Exit(1)
-	}
-
-	graphite.Prefix = cfg.Collector.Configuration.Prefix
-
-	log.Printf("Loaded Graphite connection: %#v", graphite)
-
-	ttyInput := make(chan string, 10)
-	graphiteOutput := make(chan *Metric, 10)
-	mqttOutput := make(chan *Metric, 10)
-
-	go read_from_tty(sif, ttyInput)
-	go send_to_graphite(graphite, graphiteOutput)
-	go send_to_mqtt(mqttClient, mqttOutput)
-
-	parse_input(ttyInput, graphiteOutput, mqttOutput)
-}
-
-func send_to_mqtt(client mqtt.Client, input chan *Metric) {
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		panic(token.Error())
-	}
-
-	for {
-		message := <-input
-
-		log.Printf("MQTT Sending to '%s': %#v", message.MQTTTopic(), message)
-
-		token := client.Publish(message.MQTTTopic(), 0, false, message.MQTTValue())
-		token.Wait()
-
-		if token.Error() != nil {
-			log.Println(token.Error())
-		}
-	}
-}
-
-func (m *Metric) MQTTTopic() string {
-	return cfg.MQTT.TopicPrefix + "/" + m.Name
-}
-
-func (m *Metric) MQTTValue() string {
-	u, err := json.Marshal(m)
-	if err != nil {
-		return ""
-	}
-
-	return string(u)
-}
-
-func send_to_graphite(graphite *graphite.Graphite, input chan *Metric) {
-	for {
-		message := <-input
-
-		log.Printf("Graphite Sending to '%s': %#v", message.GraphiteName(), message)
-
-		if err := graphite.Connect(); err != nil {
-			log.Println(err)
-			continue
-		}
-
-		graphite.SimpleSend(message.GraphiteName(), message.Value)
-
-		if err := graphite.Disconnect(); err != nil {
-			log.Println(err)
-		}
-	}
-}
-
-func id_to_name(id string) string {
-	return cfg.NameMapping[id]
-}
-
 func parse_input(input chan string, outputs ...chan *Metric) {
 	for {
 		message := <-input
@@ -234,7 +67,7 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 
 		var (
 			pType  string
-			pValue string
+			pValue float64
 		)
 
 		if strings.HasPrefix(id, "0000") {
@@ -243,7 +76,7 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 			pType, pValue = payload_ds18b20(payload)
 		} else {
 			pType = "unknown"
-			pValue = "-"
+			pValue = 0
 		}
 
 		m := Metric{Name: name, Type: pType, Value: pValue}
@@ -252,10 +85,6 @@ func parse_input(input chan string, outputs ...chan *Metric) {
 			o <- &m
 		}
 	}
-}
-
-func (m *Metric) GraphiteName() string {
-	return strings.Join([]string{m.Name, m.Type, "value"}, ".")
 }
 
 func integer_strings_to_integers(integer_strings []string) ([]int, error) {
@@ -288,7 +117,7 @@ func integer_strings_to_hexstring(integer_strings []string) (string, error) {
 	return buffer.String(), nil
 }
 
-func payload_node(payload []int) (string, string) {
+func payload_node(payload []int) (string, float64) {
 	payload_type_int := payload[0]
 	payload_type := "unknown"
 
@@ -302,10 +131,10 @@ func payload_node(payload []int) (string, string) {
 		payload_value = payload_value<<8 + payload[i]
 	}
 
-	return payload_type, fmt.Sprintf("%d", payload_value)
+	return payload_type, float64(payload_value)
 }
 
-func payload_ds18b20(payload []int) (string, string) {
+func payload_ds18b20(payload []int) (string, float64) {
 	low := payload[0]
 	high := payload[1]
 
@@ -322,12 +151,7 @@ func payload_ds18b20(payload []int) (string, string) {
 		t = (t ^ 65535) + 1
 	}
 
-	temp := fmt.Sprintf("%f", RoundN(float64(s*t)/16.0, 1))
+	temp := float64(s*t) / 16.0
 
 	return "temperature", temp
-}
-
-func RoundN(f float64, places int) float64 {
-	shift := math.Pow(10, float64(places))
-	return math.Floor((f*shift)+.5) / shift
 }

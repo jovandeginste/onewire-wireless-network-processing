@@ -1,5 +1,4 @@
 BINARY=receive
-SOURCE=$(BINARY).go
 
 ALL_ARCHS=lnx64 rpi rpi2 win64
 
@@ -13,7 +12,7 @@ deps:
 build-all: $(foreach arch,$(ALL_ARCHS),build-$(arch))
 
 build:
-	go build -o "bin/$(BINARY).$(SUFFIX)" "$(SOURCE)"
+	go build -o "bin/$(BINARY).$(SUFFIX)"
 	file "bin/$(BINARY).$(SUFFIX)"
 
 build-lnx64:
