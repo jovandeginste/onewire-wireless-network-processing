@@ -3,10 +3,26 @@ package main
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 
 	"github.com/marpaia/graphite-golang"
 )
+
+func newGraphiteClient() *graphite.Graphite {
+	// try to connect a graphiteClient server
+	graphiteClient, err := graphite.NewGraphite(cfg.Graphite.Configuration.Host, cfg.Graphite.Configuration.Port)
+	if err != nil {
+		log.Fatal("An error has occurred while trying to create a Graphite connector:", err)
+		os.Exit(1)
+	}
+
+	graphiteClient.Prefix = cfg.Graphite.Configuration.Prefix
+
+	log.Printf("Loaded Graphite connection: %#v", graphiteClient)
+
+	return graphiteClient
+}
 
 func send_to_graphite(graphite *graphite.Graphite, input chan *Metric) {
 	for {

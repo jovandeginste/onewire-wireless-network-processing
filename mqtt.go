@@ -3,10 +3,28 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
 	"path"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 )
+
+func newMQTTClient() mqtt.Client {
+	mqtt.ERROR = log.New(os.Stdout, "", 0)
+
+	opts := mqtt.NewClientOptions().AddBroker(cfg.MQTT.Host).SetClientID("onewire_logger")
+
+	opts.SetKeepAlive(60 * time.Second)
+
+	opts.SetPingTimeout(1 * time.Second)
+	opts.Username = cfg.MQTT.Username
+	opts.Password = cfg.MQTT.Password
+
+	log.Printf("Loaded MQTT connection: %#v", opts)
+
+	return mqtt.NewClient(opts)
+}
 
 func send_to_mqtt(client mqtt.Client, input chan *Metric) {
 	if token := client.Connect(); token.Wait() && token.Error() != nil {
@@ -18,7 +36,7 @@ func send_to_mqtt(client mqtt.Client, input chan *Metric) {
 
 		log.Printf("MQTT Sending to '%s': %#v", message.MQTTTopic(), message)
 
-		token := client.Publish(message.MQTTTopic(), 0, false, message.MQTTValue())
+		token := client.Publish(message.MQTTTopic(), 0, true, message.MQTTValue())
 		token.Wait()
 
 		if token.Error() != nil {

@@ -6,15 +6,36 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+
+	"github.com/tarm/serial"
 )
 
 type Metric struct {
 	Name  string  `json:"name"`
 	Type  string  `json:"type"`
 	Value float64 `json:"value"`
+}
+
+func newTTYReceiver() *serial.Port {
+	portStr := cfg.Receiver.PortStr
+	baudRate := cfg.Receiver.BaudRate
+
+	if err := reset_tty(portStr, baudRate); err != nil {
+		log.Fatal("An error has occurred while resetting tty:", err)
+		os.Exit(1)
+	}
+
+	sif, err := serial.OpenPort(&serial.Config{Name: portStr, Baud: baudRate})
+	if err != nil {
+		log.Fatal("An error has occurred while trying to open the tty:", err)
+		os.Exit(1)
+	}
+
+	return sif
 }
 
 func reset_tty(port_str string, baud_rate int) error {
