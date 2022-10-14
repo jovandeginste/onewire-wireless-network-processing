@@ -15,19 +15,18 @@ type config struct {
 		Parity   int    `yaml:"parity"`
 	} `yaml:"receiver"`
 	Graphite struct {
-		Type          string `yaml:"type"`
 		Configuration struct {
 			Host   string `yaml:"host"`
 			Port   int    `yaml:"port"`
 			Prefix string `yaml:"prefix"`
-		}
-	}
+		} `yaml:"configuration"`
+	} `yaml:"graphite"`
 	MQTT struct {
 		Host        string `yaml:"host"`
 		Username    string `yaml:"username"`
 		Password    string `yaml:"password"`
 		TopicPrefix string `yaml:"topic_prefix"`
-	}
+	} `yaml:"mqtt"`
 	NameMapping map[string]string `yaml:"name_mapping"`
 }
 

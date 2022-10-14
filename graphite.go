@@ -19,7 +19,7 @@ func newGraphiteClient() *graphite.Graphite {
 
 	graphiteClient.Prefix = cfg.Graphite.Configuration.Prefix
 
-	log.Printf("Loaded Graphite connection: %#v", graphiteClient)
+	log.Printf("Loaded Graphite connection: %s:%d", cfg.Graphite.Configuration.Host, cfg.Graphite.Configuration.Port)
 
 	return graphiteClient
 }

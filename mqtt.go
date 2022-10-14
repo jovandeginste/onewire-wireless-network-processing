@@ -15,15 +15,17 @@ func newMQTTClient() mqtt.Client {
 
 	opts := mqtt.NewClientOptions().AddBroker(cfg.MQTT.Host).SetClientID("onewire_logger")
 
-	opts.SetKeepAlive(60 * time.Second)
+	opts.SetKeepAlive(300 * time.Second)
 
 	opts.SetPingTimeout(1 * time.Second)
 	opts.Username = cfg.MQTT.Username
 	opts.Password = cfg.MQTT.Password
 
-	log.Printf("Loaded MQTT connection: %#v", opts)
+	client := mqtt.NewClient(opts)
 
-	return mqtt.NewClient(opts)
+	log.Printf("Loaded MQTT connection: %s@%s", cfg.MQTT.Username, cfg.MQTT.Host)
+
+	return client
 }
 
 func sendMQTT(client mqtt.Client, input chan *Metric) {
